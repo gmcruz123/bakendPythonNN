@@ -1,71 +1,58 @@
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import json
 import urllib.parse
 import argparse
 import tensorflow as tf #Import tensor flow
-import numpy as np
-from keras import backend as K
+
 import fingers_data
 
+def ejecutarServer(menique,medio,indice,pulgar):
+  
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--batch_size', default=100, help='batch size')
-args = parser.parse_args()
+    (train_x, train_y), (test_x, test_y) = fingers_data.load_data()
 
+    my_feature_columns = []
+    for key in train_x.keys():
+        print(key)
+        my_feature_columns.append(tf.feature_column.numeric_column(key=key))
 
-def load_data(menique,medio,indice,pulgar):
+    classifier = tf.estimator.DNNClassifier( #Dnn classifier , its backpropagation
+        feature_columns=my_feature_columns,
+        hidden_units=[22,12,22],
+        n_classes = 22,
 
-        args = parser.parse_args()
-        # Feature columns describe how to use the input.
-        (train_x, train_y), (test_x, test_y) = fingers_data.load_data()
-        my_feature_columns = []
-        for key in train_x.keys():
-            print(key)
-            my_feature_columns.append(tf.feature_column.numeric_column(key=key))
+        model_dir= r'NNFINAL54',
+        #Define optimizer
+        optimizer = tf.train.ProximalAdagradOptimizer(
+        learning_rate=0.001,
+        l1_regularization_strength=0.001)
+    )   
 
- 
- 
-        # Build 2 hidden layer DNN with 10, 10 units respectively.
-        classifier = tf.estimator.DNNClassifier( #Dnn classifier , its backpropagation
-            feature_columns=my_feature_columns,
-            # 3 hidden layers of 22, 12 and 22 nodes each one.
-            hidden_units=[22,12,22],
-            # The model must choose between 22 classes, alphabet letters.
-            n_classes = 22,
-            #el 60 corresponde a una capa oculta con 8 neuronas
-            #el 70 corresponde a dos capas ocultas con 22 en la primera y 12 en la segunda
-            model_dir='NNFINAL54',
-            #Define optimizer
-            optimizer = tf.train.ProximalAdagradOptimizer(
-            learning_rate=0.001,
-            l1_regularization_strength=0.001)
-        )   
+    expected = ['a']
+    predict_x = {
+        'menique': [menique],#Target from thumb
+        'medio': [medio],#Target from index finger
+        'indice':[indice],#Target from ring finger
+        'pulgar': [pulgar],#Target from pinkie
 
+    }
+    predictions = classifier.predict(
+        input_fn=lambda:fingers_data.eval_input_fn(predict_x,
+                                                labels=None,
+                                                batch_size=100))
 
- 
-        predict_x = {
-            'menique': [menique],#Target from thumb
-            'medio': [medio],#Target from index finger
-            'indice':[indice],#Target from ring finger
-            'pulgar': [pulgar],#Target from pinkie
+    dict = {}
 
-        }
+    for pred_dict, expec in zip(predictions, expected):
+        class_id = pred_dict['class_ids'][0]
+        probability = pred_dict['probabilities'][class_id]
+        dict = {"letter":fingers_data.CLASSES[class_id],"probability":probability}
 
-       
-        predictions = classifier.predict(
-            input_fn=lambda:fingers_data.eval_input_fn(predict_x,
-                                                    labels=None,
-                                                    batch_size=100))
-
-        dic = {}
-        expected = ['a']
-        for pred_dict, expec in zip(predictions,expected):
-            class_id = pred_dict['class_ids'][0]
-            probability = pred_dict['probabilities'][class_id]
-            dic = {"letter": fingers_data.CLASSES[class_id],"probability":probability*100}
-            print(fingers_data.CLASSES[class_id])
-
-        return dic
+    print(dict["letter"])
+    return dict
 
 class HttpHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -84,12 +71,13 @@ class HttpHandler(BaseHTTPRequestHandler):
         indice = float(indice)
         pulgar = float(pulgar)
         
-        dict = load_data(menique,indice,medio,pulgar)
+        dict = ejecutarServer(menique,indice,medio,pulgar)
         letter = dict["letter"]
-        probability = dict["probability"]    
+        probability = str(dict["probability"])
+        print(probability)   
 
         
-        message = json.dumps({'result':letter ,"probability":probability}, separators=(',', ':')).encode()
+        message = json.dumps({'result':letter,'probability':probability}, separators=(',', ':')).encode()
         self.wfile.write(message)
 
 
